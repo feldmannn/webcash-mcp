@@ -81,7 +81,7 @@ The MCP server **pays without a per-call confirmation prompt**. An agent that ca
 
 1. **Fund the wallet only with what you're willing to spend in a session.** Treat it like cash in a physical wallet — not your bank account.
 2. **Audit spends in real time.** Every payment is logged to stderr in the form `[webcash-mcp][spend] <amount> webcash -> <url>`. Watch your MCP client's server logs.
-3. Wallet writes are atomic and concurrency-safe via `x402-webcash`'s `FileWallet`.
+3. Wallet writes are atomic and concurrency-safe **within a single process** (`FileWallet` uses an in-process mutex). Do **not** point two processes at the same wallet file — concurrent writes across processes can lose secrets. If you need multi-process access, use a SQLite- or keychain-backed wallet that implements the same `Wallet` interface.
 
 A future version will add a `WEBCASH_MAX_PER_CALL_WATS` cap that inspects the 402 quote before paying.
 

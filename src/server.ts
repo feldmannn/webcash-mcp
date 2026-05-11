@@ -47,6 +47,17 @@ const pay = wrapFetchWithWebcash(fetch, {
   },
 });
 
+// Serialize wallet_import's check-then-put sequence so two concurrent
+// imports of the same secret can't both pass the dedup check and produce
+// a duplicate entry. FileWallet only serializes individual ops, not
+// multi-step flows.
+let importChain: Promise<unknown> = Promise.resolve();
+function serializeImport<T>(work: () => Promise<T>): Promise<T> {
+  const run = importChain.then(work, work);
+  importChain = run.catch(() => undefined);
+  return run;
+}
+
 const server = new McpServer({ name: "webcash-mcp", version: VERSION });
 
 server.registerTool(
@@ -87,6 +98,7 @@ server.registerTool(
       return { content: [{ type: "text", text: summary }] };
     } catch (err) {
       if (err instanceof NoMatchingSecretError) {
+        const needDecimal = watsToDecimal(BigInt(err.wats));
         return {
           isError: true,
           content: [
@@ -94,9 +106,8 @@ server.registerTool(
               type: "text",
               text:
                 `Wallet at ${WALLET_FILE} has no spendable secret for this call ` +
-                `(need ${(err as NoMatchingSecretError & { wats?: string }).wats ?? "?"} wats, ` +
-                `and no larger secret is available to split). Use wallet_import to add a secret, ` +
-                `or wallet_balance to check current funds.`,
+                `(need ${needDecimal} webcash, and no larger secret is available to split). ` +
+                `Use wallet_import to add a secret, or wallet_balance to check current funds.`,
             },
           ],
         };
@@ -169,15 +180,31 @@ server.registerTool(
         ],
       };
     }
-    await wallet.put(secret);
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Imported ${parsed.decimal} webcash into ${WALLET_FILE}.`,
-        },
-      ],
-    };
+    return serializeImport(async () => {
+      const existing = await wallet.list();
+      if (existing.includes(secret)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Secret already present in wallet (${parsed.decimal} webcash). No change made. ` +
+                `Note: this only checks for an identical entry — if you've already spent this ` +
+                `secret elsewhere, it will fail when used.`,
+            },
+          ],
+        };
+      }
+      await wallet.put(secret);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Imported ${parsed.decimal} webcash into ${WALLET_FILE}.`,
+          },
+        ],
+      };
+    });
   },
 );
 
