@@ -96,17 +96,23 @@ A future version will add a `WEBCASH_MAX_PER_CALL_WATS` cap that inspects the 40
 Until `x402-webcash` is published to npm, this package depends on it via a local file path. To run from source:
 
 ```bash
-git clone https://github.com/feldmannn/x402-webcash.git
 git clone https://github.com/feldmannn/webcash-mcp.git
-cd x402-webcash && npm install && npm run build && cd ..
-cd webcash-mcp && npm install && npm run build
-node dist/server.js
+cd webcash-mcp
+npm install   # pulls x402-webcash from github at v0.5.0 and auto-builds it
+npm run build
+node dist/cli.js
 ```
 
-To run via tsx without building:
+Run via tsx without building:
 
 ```bash
-cd webcash-mcp && npm run dev
+npm run dev
+```
+
+Run the test suite:
+
+```bash
+npm test
 ```
 
 ## Relationship to x402-webcash

@@ -22,8 +22,9 @@
   ],
   "type": "module",
   "main": "dist/server.js",
+  "types": "dist/server.d.ts",
   "bin": {
-    "webcash-mcp": "dist/server.js"
+    "webcash-mcp": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -32,13 +33,14 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js",
-    "dev": "tsx src/server.ts"
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "node --test --import tsx tests/wallet-tools.test.ts tests/pay-fetch.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "x402-webcash": "file:../x402-webcash",
-    "zod": "^3.23.8"
+    "x402-webcash": "github:feldmannn/x402-webcash#v0.5.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
