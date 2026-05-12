@@ -1,6 +1,6 @@
 {
   "name": "webcash-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server that lets AI agents pay any HTTP 402 / x402-webcash endpoint using bearer e-cash from a local wallet.",
   "license": "MIT",
   "author": "Nate Feldmann",
@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "x402-webcash": "github:feldmannn/x402-webcash#v0.5.0",
+    "x402-webcash": "^0.5.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {

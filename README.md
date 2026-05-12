@@ -14,7 +14,7 @@ The x402-webcash protocol settles HTTP 402 challenges in webcash, a zero-fee bea
 npx webcash-mcp
 ```
 
-(Requires Node.js 20+. Once published to npm — for now, see "Local development" below.)
+(Requires Node.js 20+.)
 
 ## Wire into Claude Desktop
 
@@ -93,12 +93,12 @@ A future version will add a `WEBCASH_MAX_PER_CALL_WATS` cap that inspects the 40
 
 ## Local development
 
-Until `x402-webcash` is published to npm, this package depends on it via a local file path. To run from source:
+To run from source:
 
 ```bash
 git clone https://github.com/feldmannn/webcash-mcp.git
 cd webcash-mcp
-npm install   # pulls x402-webcash from github at v0.5.0 and auto-builds it
+npm install
 npm run build
 node dist/cli.js
 ```
