@@ -1,6 +1,6 @@
 {
   "name": "webcash-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server that lets AI agents pay any HTTP 402 / x402-webcash endpoint using bearer e-cash from a local wallet.",
   "license": "MIT",
   "author": "Nate Feldmann",
@@ -35,17 +35,18 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
-    "test": "node --test --import tsx tests/wallet-tools.test.ts tests/pay-fetch.test.ts"
+    "test": "node --test --import tsx tests/wallet-tools.test.ts tests/pay-fetch.test.ts tests/pay-tool.test.ts tests/dialect-alignment.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "x402-webcash": "^0.5.0",
+    "x402-webcash": "^0.5.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "x402-mcp": "^0.1.0"
   },
   "engines": {
     "node": ">=20"

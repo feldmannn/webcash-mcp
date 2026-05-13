@@ -35,7 +35,7 @@ test("wallet_status reports version, label, and zero secrets when empty", async 
   const { client } = await makeHarness();
   const res = await client.callTool({ name: "wallet_status", arguments: {} });
   const text = firstText(res);
-  assert.match(text, /webcash-mcp 0\.1\.0/);
+  assert.match(text, /webcash-mcp \d+\.\d+\.\d+/);
   assert.match(text, /wallet: <test>/);
   assert.match(text, /secrets: 0/);
   assert.match(text, /auto-split: enabled/);
@@ -115,9 +115,56 @@ test("wallet_import dedup holds under concurrent calls (race regression)", async
   assert.equal((await wallet.list()).length, 1, "wallet must hold exactly one entry");
 });
 
-test("tools/list returns all four tools", async () => {
+test("pay_tool refuses non-HTTPS non-loopback serverUrl (no plaintext bearer secrets)", async () => {
+  const { client } = await makeHarness();
+  const res = await client.callTool({
+    name: "pay_tool",
+    arguments: {
+      serverUrl: "http://example.com/mcp",
+      toolName: "premium",
+      toolArgs: {},
+    },
+  });
+  assert.equal((res as { isError?: boolean }).isError, true);
+  assert.match(
+    firstText(res),
+    /only HTTPS or loopback URLs/,
+    "pay_tool must reject plaintext HTTP to non-loopback hosts",
+  );
+});
+
+test("pay_tool accepts loopback HTTP (test rigs)", async () => {
+  // We don't have a real server bound here — the call will fail at
+  // connect-time. What matters is that the HTTPS guard does NOT short-
+  // circuit it: we should see a network-style error, not the
+  // "only HTTPS or loopback URLs" rejection.
+  const { client } = await makeHarness();
+  const res = await client.callTool({
+    name: "pay_tool",
+    arguments: {
+      // Port 1 is reserved + unbound — connect refused fast.
+      serverUrl: "http://127.0.0.1:1/mcp",
+      toolName: "premium",
+      toolArgs: {},
+    },
+  });
+  assert.equal((res as { isError?: boolean }).isError, true);
+  assert.doesNotMatch(
+    firstText(res),
+    /only HTTPS or loopback URLs/,
+    "loopback http:// must pass the security guard (subsequent connect may fail, which is fine)",
+  );
+});
+
+test("tools/list returns all five tools", async () => {
   const { client } = await makeHarness();
   const res = (await client.listTools()) as { tools: { name: string }[] };
   const names = res.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["pay_fetch", "wallet_balance", "wallet_import", "wallet_status"]);
+  assert.deepEqual(names, [
+    "pay_fetch",
+    "pay_tool",
+    "wallet_balance",
+    "wallet_import",
+    "wallet_status",
+  ]);
 });

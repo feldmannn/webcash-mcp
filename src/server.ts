@@ -4,15 +4,22 @@
 // MemoryWallet and InMemoryTransport.
 
 import { z } from "zod";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   NoMatchingSecretError,
   wrapFetchWithWebcash,
   type Wallet,
 } from "x402-webcash/client";
-import { parseSecret, watsToDecimal } from "x402-webcash";
+import { isAcceptableIssuerScheme, parseSecret, watsToDecimal } from "x402-webcash";
+import {
+  PaidRetryRejectedError,
+  PaywallDoesNotAcceptWebcashError,
+  payToolRequest,
+} from "./pay-tool.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export type CreateServerOptions = {
   /** Wallet backing all paid calls and import/balance/status tools. */
@@ -121,6 +128,119 @@ export function createServer(opts: CreateServerOptions): McpServer {
         }
         const msg = (err as Error)?.message ?? String(err);
         return { isError: true, content: [{ type: "text", text: `error: ${msg}` }] };
+      }
+    },
+  );
+
+  server.registerTool(
+    "pay_tool",
+    {
+      title: "Pay and call a paywalled MCP tool",
+      description:
+        "Call a tool on a remote MCP server, transparently paying any x402-webcash 402 challenge " +
+        "from the local wallet. The remote server is reached via streamable HTTP. Use this whenever " +
+        "you need to invoke a tool whose seller has paywalled it via x402-mcp.",
+      inputSchema: {
+        serverUrl: z
+          .string()
+          .url()
+          .describe("Absolute URL of the remote MCP server (streamable HTTP endpoint)."),
+        toolName: z.string().describe("Name of the tool to call on the remote server."),
+        toolArgs: z
+          .record(z.unknown())
+          .optional()
+          .describe("Arguments object to pass to the remote tool (defaults to {})."),
+      },
+    },
+    async ({ serverUrl, toolName, toolArgs }) => {
+      // Refuse plaintext transports. The payment payload is a bearer
+      // secret carried in request _meta over the streamable HTTP wire;
+      // any on-path observer can race the legitimate facilitator and
+      // steal the funds. Mirrors x402-webcash's Facilitator constructor
+      // check on the seller side.
+      if (!isAcceptableIssuerScheme(serverUrl, /* allowHttp */ false)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text:
+                `Refusing to call pay_tool against "${serverUrl}": only HTTPS or loopback URLs ` +
+                `are accepted. Plaintext HTTP would leak the webcash bearer secret to any on-path ` +
+                `observer.`,
+            },
+          ],
+        };
+      }
+      const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+      const client = new Client({ name: "webcash-mcp/pay_tool", version: VERSION });
+      // Wall-clock budget for the entire dance (connect + probe + paid
+      // retry + close). 90s default covers the x402-v2 recommended 60s
+      // facilitator window plus handshake and refund slack. Aborts the
+      // streamable-HTTP transport on timeout so a hung seller cannot
+      // hang the agent indefinitely.
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(new Error("pay_tool timeout")), 90_000);
+      try {
+        await client.connect(transport);
+        const result = await payToolRequest(client, toolName, (toolArgs ?? {}) as Record<string, unknown>, {
+          wallet,
+          splitFetchImpl: fetchImpl,
+          signal: abort.signal,
+        });
+        // The remote MCP server's content blocks have already been
+        // validated by the SDK on receive — forward them through. TS
+        // can't see through the unknown to the union, so we cast.
+        return formatRemoteResult(result) as never;
+      } catch (err) {
+        if (err instanceof NoMatchingSecretError) {
+          const needDecimal = watsToDecimal(BigInt(err.wats));
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text:
+                  `Wallet at ${walletLabel} has no spendable secret for ${toolName} on ${serverUrl} ` +
+                  `(need ${needDecimal} webcash, and no larger secret is available to split). ` +
+                  `Use wallet_import to add a secret, or wallet_balance to check current funds.`,
+              },
+            ],
+          };
+        }
+        if (err instanceof PaywallDoesNotAcceptWebcashError) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `Remote server's 402 challenge does not accept the webcash scheme.`,
+              },
+            ],
+          };
+        }
+        if (err instanceof PaidRetryRejectedError) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text:
+                  `Paid retry was rejected by ${serverUrl}; wallet has been refunded. ` +
+                  `Paywall reason: ${err.secondChallenge.error ?? "(none)"}.`,
+              },
+            ],
+          };
+        }
+        const msg = (err as Error)?.message ?? String(err);
+        return { isError: true, content: [{ type: "text", text: `error: ${msg}` }] };
+      } finally {
+        clearTimeout(timer);
+        try {
+          await client.close();
+        } catch {
+          // Ignore close errors — the call already returned its result.
+        }
       }
     },
   );
@@ -236,4 +356,30 @@ export function createServer(opts: CreateServerOptions): McpServer {
   );
 
   return server;
+}
+
+/**
+ * Pass the remote tool's CallToolResult through unchanged so the agent
+ * sees exactly what the paid tool returned — text, image, resource blocks,
+ * structuredContent, etc.
+ */
+function formatRemoteResult(result: unknown): {
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string } | Record<string, unknown>>;
+  structuredContent?: unknown;
+} {
+  const r = (result ?? {}) as {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  const content =
+    Array.isArray(r.content) && r.content.length > 0
+      ? (r.content as Array<{ type: "text"; text: string } | Record<string, unknown>>)
+      : [{ type: "text" as const, text: "(remote tool returned no content)" }];
+  return {
+    ...(r.isError ? { isError: true } : {}),
+    content,
+    ...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}),
+  };
 }
