@@ -14,7 +14,7 @@ import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createPaywall } from "x402-mcp";
+import { createPaywall } from "@feldmannn/x402-mcp";
 import { Facilitator, webcashSettler, watsToDecimal } from "x402-webcash";
 import { MemoryWallet } from "x402-webcash/client";
 import {

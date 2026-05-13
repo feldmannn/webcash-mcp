@@ -17,7 +17,7 @@ import {
 import {
   X402_PAYMENT_META_KEY as SELLER_PAYMENT_KEY,
   X402_CHALLENGE_META_KEY as SELLER_CHALLENGE_KEY,
-} from "x402-mcp";
+} from "@feldmannn/x402-mcp";
 
 test("buyer and seller agree on the X402_PAYMENT_META_KEY wire constant", () => {
   assert.equal(
