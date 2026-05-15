@@ -1,8 +1,8 @@
 # webcash-mcp
 
-An MCP (Model Context Protocol) server that lets AI agents pay any HTTP 402 / [x402-webcash](https://github.com/feldmannn/x402-webcash) paywalled URL using bearer e-cash from a local wallet.
+An MCP (Model Context Protocol) server that lets AI agents pay any [x402-webcash](https://github.com/feldmannn/x402-webcash)-paywalled HTTP URL **or** paywalled MCP tool, using bearer e-cash from a local wallet.
 
-Drop it into any MCP client — Claude Desktop, your own agent harness — and the agent gains a payment method: it can call paid endpoints, top up its wallet, and check its balance, all as MCP tool calls.
+Drop it into any MCP client — Claude Desktop, your own agent harness — and the agent gains a payment method: it can call paid HTTP endpoints, call paid tools on other MCP servers, top up its wallet, and check its balance, all as MCP tool calls.
 
 ## Why
 
@@ -34,7 +34,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop. The four tools below will be available to the assistant.
+Restart Claude Desktop. The five tools below will be available to the assistant.
 
 ## Seed the wallet
 
@@ -60,6 +60,17 @@ Args:
 - `body` (string, optional) — request body as raw string
 - `headers` (object, optional) — extra HTTP headers as a `{ "name": "value" }` map
 
+### `pay_tool`
+
+Call a tool on a remote MCP server. If the remote server paywalls the tool with an [x402-mcp](https://www.npmjs.com/package/@feldmannn/x402-mcp) 402 challenge, the server pays it transparently from the wallet and returns the paid result.
+
+Plaintext HTTP is refused — only HTTPS or loopback URLs are accepted, because the webcash bearer secret is carried in `_meta` over the wire and any on-path observer could race the legitimate facilitator to spend it.
+
+Args:
+- `serverUrl` (string, required) — absolute URL of the remote MCP server (streamable HTTP endpoint)
+- `toolName` (string, required) — name of the tool to call on the remote server
+- `toolArgs` (object, optional) — arguments object to pass to the remote tool (default `{}`)
+
 ### `wallet_balance`
 
 Returns the total unspent webcash in the local wallet, the number of secrets, and a denomination breakdown.
@@ -77,11 +88,12 @@ Diagnostic: reports the wallet file path, secret count, and server version. Use 
 
 ## Security model — read this
 
-The MCP server **pays without a per-call confirmation prompt**. An agent that can call `pay_fetch` can drain the wallet by hitting an attacker-controlled paywall with a high quote. Mitigations:
+The MCP server **pays without a per-call confirmation prompt**. An agent that can call `pay_fetch` or `pay_tool` can drain the wallet by hitting an attacker-controlled paywall with a high quote. Mitigations:
 
 1. **Fund the wallet only with what you're willing to spend in a session.** Treat it like cash in a physical wallet — not your bank account.
 2. **Audit spends in real time.** Every payment is logged to stderr in the form `[webcash-mcp][spend] <amount> webcash -> <url>`. Watch your MCP client's server logs.
-3. Wallet writes are atomic and concurrency-safe **within a single process** (`FileWallet` uses an in-process mutex). Do **not** point two processes at the same wallet file — concurrent writes across processes can lose secrets. If you need multi-process access, use a SQLite- or keychain-backed wallet that implements the same `Wallet` interface.
+3. **Watch for `[webcash-mcp][CRITICAL]` lines.** `pay_tool` emits one if a seller returns a second 402 after a payment retry — a dishonest seller can settle the payment AND return a fake 402 to trick the wallet into refunding a secret that's already been spent. The log line records the secret fingerprint and the seller URL so you can audit repeat offenders.
+4. Wallet writes are atomic and concurrency-safe **within a single process** (`FileWallet` uses an in-process mutex). Do **not** point two processes at the same wallet file — concurrent writes across processes can lose secrets. If you need multi-process access, use a SQLite- or keychain-backed wallet that implements the same `Wallet` interface.
 
 A future version will add a `WEBCASH_MAX_PER_CALL_WATS` cap that inspects the 402 quote before paying.
 
@@ -117,7 +129,7 @@ npm test
 
 ## Relationship to x402-webcash
 
-`x402-webcash` is the protocol library — it implements the HTTP 402 / webcash payment scheme. `webcash-mcp` is a thin MCP wrapper around it: every tool here delegates to `x402-webcash`'s `FileWallet` and `wrapFetchWithWebcash`. If you're building a non-MCP client (a CLI, a server middleware, a different transport), use `x402-webcash` directly instead.
+`x402-webcash` is the protocol library — it implements the HTTP 402 / webcash payment scheme. `webcash-mcp` is a thin MCP wrapper around it: `pay_fetch` and the wallet tools delegate to `x402-webcash`'s `FileWallet` and `wrapFetchWithWebcash`; `pay_tool` runs the x402-over-MCP dance defined by [`@feldmannn/x402-mcp`](https://www.npmjs.com/package/@feldmannn/x402-mcp) (seller side) and pays with webcash. If you're building a non-MCP client (a CLI, a server middleware, a different transport), use `x402-webcash` directly instead.
 
 ## License
 

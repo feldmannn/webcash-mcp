@@ -19,7 +19,7 @@ import {
   payToolRequest,
 } from "./pay-tool.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 export type CreateServerOptions = {
   /** Wallet backing all paid calls and import/balance/status tools. */
